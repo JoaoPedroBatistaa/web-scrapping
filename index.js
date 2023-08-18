@@ -99,7 +99,22 @@ async function run () {
     })
     const page = await browser.newPage()
 
-    await page.goto('https://www.geetest.com/en/demo', { waitUntil: 'networkidle2' })
+    await page.goto('https://www.chiliz.net/login?redirect=https%3A%2F%2Fwww.chiliz.net%2F', { waitUntil: 'networkidle2' })
+
+    await page.waitForSelector('.MuiButtonBase-root.MuiButton-root.MuiButton-contained.MuiButton-containedPrimary.MuiButton-containedSizeSmall.MuiButton-sizeSmall');
+    await page.click('.MuiButtonBase-root.MuiButton-root.MuiButton-contained.MuiButton-containedPrimary.MuiButton-containedSizeSmall.MuiButton-sizeSmall');
+
+
+    await page.waitForSelector('input[placeholder="Please enter email address or phone number"]');
+    await page.type('input[placeholder="Please enter email address or phone number"]', 'joaopbatistastos@gmail.com');
+
+    await page.waitForSelector('input[placeholder="Enter the password"]');
+    await page.type('input[placeholder="Enter the password"]', '153486153.Joao');
+
+    await page.waitForSelector('.MuiButton-label');
+    await page.click('.MuiButton-label');
+
+
 
     await page.waitFor(1000)
 
@@ -108,7 +123,7 @@ async function run () {
 
     let [cx, cy] = await findDiffPosition(page)
 
-    const sliderHandle = await page.$('.geetest_slider_button')
+    const sliderHandle = await page.$('.geetest_slider_f7345f80 ');
     const handle = await sliderHandle.boundingBox()
 
     let xPosition = handle.x + handle.width / 2
