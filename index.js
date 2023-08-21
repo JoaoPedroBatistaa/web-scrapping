@@ -78,11 +78,11 @@ async function saveSliderCaptchaImages(page) {
     await page.waitFor(1000);
 
     let originalImageUrl = await page.$eval('[class*="geetest_bg_"]', element => {
-        return element.style.backgroundImage.slice(5, -2); // Extrai URL de "url("https://...")"
+        return element.style.backgroundImage.slice(5, -2);
     });
 
     let captchaImageUrl = await page.$eval('[class*="geetest_slice_bg"]', element => {
-        return element.style.backgroundImage.slice(5, -2); // Extrai URL de "url("https://...")"
+        return element.style.backgroundImage.slice(5, -2);
     });
 
     console.log('URL da imagem original:', originalImageUrl);
