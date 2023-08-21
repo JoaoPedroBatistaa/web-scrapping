@@ -108,6 +108,36 @@ async function saveSliderCaptchaImages(page) {
     await fs.writeFile('./original.png', originalImageBuffer);
 }
 
+async function findPuzzleCenter(imagePath) {
+    let srcPuzzleImage = await Jimp.read(imagePath);
+    let srcPuzzle = cv.matFromImageData(srcPuzzleImage.bitmap);
+    let dstPuzzle = new cv.Mat();
+
+    cv.cvtColor(srcPuzzle, srcPuzzle, cv.COLOR_BGR2GRAY);
+    cv.threshold(srcPuzzle, dstPuzzle, 127, 255, cv.THRESH_BINARY);
+
+    let kernel = cv.Mat.ones(5, 5, cv.CV_8UC1);
+    let anchor = new cv.Point(-1, -1);
+    cv.dilate(dstPuzzle, dstPuzzle, kernel, anchor, 1);
+    cv.erode(dstPuzzle, dstPuzzle, kernel, anchor, 1);
+
+    let contours = new cv.MatVector();
+    let hierarchy = new cv.Mat();
+    cv.findContours(dstPuzzle, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+
+    let contour = contours.get(0);
+    let moment = cv.moments(contour);
+
+    srcPuzzle.delete();
+    dstPuzzle.delete();
+    kernel.delete();
+    contours.delete();
+    hierarchy.delete();
+
+    return [Math.floor(moment.m10 / moment.m00), Math.floor(moment.m01 / moment.m00)];
+}
+
+
 
 async function saveDiffImage() {
     const originalImage = await Jimp.read('./original.png');
@@ -141,6 +171,13 @@ async function saveDiffImage() {
 
     console.log("Melhor posição para a peça do quebra-cabeça:", maxLoc);
 
+    const [centerX, centerY] = await findPuzzleCenter('./captcha.png');
+    console.log("Centro da peça do quebra-cabeça:", centerX, centerY);
+
+    originalMat.delete();
+    maskMat.delete();
+    resultMat.delete();
+    kernel.delete();
     originalMat.delete();
     maskMat.delete();
     resultMat.delete();
