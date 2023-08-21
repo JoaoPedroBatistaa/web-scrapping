@@ -74,16 +74,13 @@ async function saveSliderCaptchaImages(page) {
     await page.waitForSelector('.MuiButton-label');
     await page.click('.MuiButton-label');
 
-    // Aguarda o carregamento das imagens
     await page.waitForSelector('[class*="geetest_bg_"], [class*="geetest_slice_bg"]', { visible: true });
     await page.waitFor(1000);
 
-    // Extrai a URL de backgroundImage da imagem completa
     let originalImageUrl = await page.$eval('[class*="geetest_bg_"]', element => {
         return element.style.backgroundImage.slice(5, -2); // Extrai URL de "url("https://...")"
     });
 
-    // Extrai a URL de backgroundImage da peça do puzzle
     let captchaImageUrl = await page.$eval('[class*="geetest_slice_bg"]', element => {
         return element.style.backgroundImage.slice(5, -2); // Extrai URL de "url("https://...")"
     });
