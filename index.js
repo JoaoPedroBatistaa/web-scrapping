@@ -5,9 +5,19 @@ const pixelmatch = require('pixelmatch')
 const { cv } = require('opencv-wasm')
 
 async function findPuzzlePosition (page) {
-    let images = await page.$$eval('.geetest_canvas_img canvas', canvases => canvases.map(canvas => canvas.toDataURL().replace(/^data:image\/png;base64,/, '')))
 
-    await fs.writeFile(`./puzzle.png`, images[1], 'base64')
+    let puzzleImageUrl = await page.$eval('[class*="geetest_slice_bg"]', element => {
+        return element.style.backgroundImage.slice(5, -2);
+    });
+
+    if (!puzzleImageUrl|| !puzzleImageUrl.startsWith('http')) {
+        console.error("URL do captcha inválida:", puzzleImageUrl);
+        return;
+    }
+
+    const puzzleImageBuffer = await page.goto(puzzleImageUrl).then(response => response.buffer());
+
+    await fs.writeFile('./puzzle.png', puzzleImageBuffer);
 
     let srcPuzzleImage = await Jimp.read('./puzzle.png')
     let srcPuzzle = cv.matFromImageData(srcPuzzleImage.bitmap)
@@ -61,35 +71,97 @@ async function findDiffPosition (page) {
 }
 
 async function saveSliderCaptchaImages(page) {
-    await page.waitForSelector('.tab-item.tab-item-1')
-    await page.click('.tab-item.tab-item-1')
+    await page.waitForSelector('.MuiButton-label');
+    await page.click('.MuiButton-label');
 
-    await page.waitForSelector('[aria-label="Click to verify"]')
-    await page.waitFor(1000)
+    // Aguarda o carregamento das imagens
+    await page.waitForSelector('[class*="geetest_bg_"], [class*="geetest_slice_bg"]', { visible: true });
+    await page.waitFor(1000);
 
-    await page.click('[aria-label="Click to verify"]')
+    // Extrai a URL de backgroundImage da imagem completa
+    let originalImageUrl = await page.$eval('[class*="geetest_bg_"]', element => {
+        return element.style.backgroundImage.slice(5, -2); // Extrai URL de "url("https://...")"
+    });
 
-    await page.waitForSelector('.geetest_canvas_img canvas', { visible: true })
-    await page.waitFor(1000)
-    let images = await page.$$eval('.geetest_canvas_img canvas', canvases => {
-        return canvases.map(canvas => canvas.toDataURL().replace(/^data:image\/png;base64,/, ''))
-    })
+    // Extrai a URL de backgroundImage da peça do puzzle
+    let captchaImageUrl = await page.$eval('[class*="geetest_slice_bg"]', element => {
+        return element.style.backgroundImage.slice(5, -2); // Extrai URL de "url("https://...")"
+    });
 
-    await fs.writeFile(`./captcha.png`, images[0], 'base64')
-    await fs.writeFile(`./original.png`, images[2], 'base64')
+    console.log('URL da imagem original:', originalImageUrl);
+    console.log('URL da imagem do captcha:', captchaImageUrl);
+
+    if (!originalImageUrl || !originalImageUrl.startsWith('http')) {
+        console.error("URL da imagem original inválida:", originalImageUrl);
+        return;
+    }
+
+    if (!captchaImageUrl || !captchaImageUrl.startsWith('http')) {
+        console.error("URL do captcha inválida:", captchaImageUrl);
+        return;
+    }
+
+    const captchaImageBuffer = await page.goto(captchaImageUrl).then(response => response.buffer());
+    const originalImageBuffer = await page.goto(originalImageUrl).then(response => response.buffer());
+
+    await fs.writeFile('./captcha.png', captchaImageBuffer);
+    await fs.writeFile('./original.png', originalImageBuffer);
 }
 
+
 async function saveDiffImage() {
-    const originalImage = await Jimp.read('./original.png')
-    const captchaImage = await Jimp.read('./captcha.png')
+    const originalImage = await Jimp.read('./original.png');
+    const captchaImage = await Jimp.read('./captcha.png');
 
-    const { width, height } = originalImage.bitmap
-    const diffImage = new Jimp(width, height)
+    const whiteImage = new Jimp(captchaImage.bitmap.width, captchaImage.bitmap.height, 0xFFFFFFFF);
 
-    const diffOptions = { includeAA: true, threshold: 0.2 }
+    const maskImage = new Jimp(captchaImage.bitmap.width, captchaImage.bitmap.height);
+    pixelmatch(
+        captchaImage.bitmap.data,
+        whiteImage.bitmap.data,
+        maskImage.bitmap.data,
+        captchaImage.bitmap.width,
+        captchaImage.bitmap.height,
+        { threshold: 0.5 }
+    );
 
-    pixelmatch(originalImage.bitmap.data, captchaImage.bitmap.data, diffImage.bitmap.data, width, height, diffOptions)
-    diffImage.write('./diff.png')
+    maskImage.write('./mask.png');
+
+    const originalMat = jimpToMat(originalImage);
+    const maskMat = jimpToMat(maskImage);
+
+    const kernel = new cv.Mat.ones(3, 3, cv.CV_8U);
+    cv.erode(maskMat, maskMat, kernel, new cv.Point(-1, -1), 1);
+    cv.dilate(maskMat, maskMat, kernel, new cv.Point(-1, -1), 1);
+
+    const resultMat = new cv.Mat();
+    cv.matchTemplate(originalMat, maskMat, resultMat, cv.TM_CCOEFF_NORMED);
+
+    const { maxLoc } = cv.minMaxLoc(resultMat);
+
+    console.log("Melhor posição para a peça do quebra-cabeça:", maxLoc);
+
+    originalMat.delete();
+    maskMat.delete();
+    resultMat.delete();
+    kernel.delete();
+}
+
+function jimpToMat(image) {
+    const { width, height, data } = image.bitmap;
+    const mat = new cv.Mat(height, width, cv.CV_8UC4);
+
+    for (let y = 0; y < height; y++) {
+        for (let x = 0; x < width; x++) {
+            const idx = (y * width + x) * 4;
+            mat.data[idx] = data[idx];
+            mat.data[idx + 1] = data[idx + 1];
+            mat.data[idx + 2] = data[idx + 2];
+            mat.data[idx + 3] = data[idx + 3];
+        }
+    }
+
+    return mat;
 }
 
 async function run () {
@@ -111,11 +183,6 @@ async function run () {
     await page.waitForSelector('input[placeholder="Enter the password"]');
     await page.type('input[placeholder="Enter the password"]', '153486153.Joao');
 
-    await page.waitForSelector('.MuiButton-label');
-    await page.click('.MuiButton-label');
-
-
-
     await page.waitFor(1000)
 
     await saveSliderCaptchaImages(page)
@@ -123,7 +190,7 @@ async function run () {
 
     let [cx, cy] = await findDiffPosition(page)
 
-    const sliderHandle = await page.$('.geetest_slider_f7345f80 ');
+    const sliderHandle = await page.$('.geetest_slider ');
     const handle = await sliderHandle.boundingBox()
 
     let xPosition = handle.x + handle.width / 2
