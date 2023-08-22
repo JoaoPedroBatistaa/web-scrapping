@@ -190,6 +190,7 @@ async function extractWithdrawFees(page) {
 
         } catch (error) {
             // console.warn(`Erro ao processar o item '${currencyName} (${currencyCode})': ${error.message}`);
+            await newTab.close();
             continue;
         }
     }
