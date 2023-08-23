@@ -142,7 +142,6 @@ async function clickBalanceLink(page) {
 
         await page.click('a[href="/finance/"]');
 
-        console.log("Link 'Balance' clicado com sucesso!");
 
     } catch (error) {
         console.error("Erro ao clicar no link 'Balance':", error.message);
@@ -153,51 +152,70 @@ async function clickBalanceLink(page) {
 async function extractWithdrawFees(page) {
     await page.waitForSelector('.list');
 
-    // Obtenha todos os elementos 'item'
     const items = await page.$$('.list .item');
     let withdrawFees = [];
 
     for (let item of items) {
         let currencyCode = '';
         let currencyName = '';
+        let newTabWithdraw = null;
+        let newTabDeposit = null;
 
         try {
             const nameDiv = await item.$('div:first-child .jss57');
             [currencyCode, currencyName] = await nameDiv.$$eval('span', spans => spans.map(span => span.innerText));
 
             if (currencyCode === 'BNB-BEP20') {
-                // console.log("Pulando BNB-BEP20.");
                 continue;
             }
 
+            // Pega a taxa de retirada
             const withdrawLink = await item.$('div:last-child a[href^="/finance/cash/"]');
+            let fee = null;
+            if (withdrawLink) {
+                const withdrawUrl = await withdrawLink.evaluate(link => link.href);
+                newTabWithdraw = await page.browser().newPage();
+                await newTabWithdraw.goto(withdrawUrl);
 
-            if (!withdrawLink) {
-                continue;
+                const feeLabel = await newTabWithdraw.waitForSelector('label[data-shrink="true"] strong.jss155', {timeout: 5000});
+                fee = await feeLabel.evaluate(strong => strong.innerText.split(': ')[1]);
+
+                await newTabWithdraw.close();
             }
 
-            const linkUrl = await withdrawLink.evaluate(link => link.href);
+            // Pega o endereço de depósito
+            const depositLink = await item.$('div:last-child a[href^="/finance/deposit/"]');
+            let depositAddress = null;
+            if (depositLink) {
+                const depositUrl = await depositLink.evaluate(link => link.href);
 
-            const newTab = await page.browser().newPage();
-            await newTab.goto(linkUrl);
+                const newTabDeposit = await page.browser().newPage();
+                await newTabDeposit.goto(depositUrl);
 
-            const feeLabel = await newTab.waitForSelector('label[data-shrink="true"] strong.jss155', {timeout: 5000});
-            const fee = await feeLabel.evaluate(strong => strong.innerText.split(': ')[1]);
+                const addressElement = await newTabDeposit.waitForSelector('.jss100 .MuiGrid-container .MuiGrid-item:first-child', {timeout: 5000});
+                depositAddress = await addressElement.evaluate(p => p.innerText);
 
-            withdrawFees.push([currencyName, currencyCode, fee]);
-            // console.log([currencyName, currencyCode, fee]);
-            await newTab.close();
+                await newTabDeposit.close();
+            }
+
+
+            withdrawFees.push([currencyName, currencyCode, fee, depositAddress]);
+            console.log([currencyName, currencyCode, fee, depositAddress]);
 
         } catch (error) {
-            // console.warn(`Erro ao processar o item '${currencyName} (${currencyCode})': ${error.message}`);
-            await newTab.close();
+            console.warn(`Erro ao processar o item '${currencyName} (${currencyCode})': ${error.message}`);
+            if (newTabWithdraw && !newTabWithdraw.isClosed()) {
+                await newTabWithdraw.close();
+            }
+            if (newTabDeposit && !newTabDeposit.isClosed()) {
+                await newTabDeposit.close();
+            }
             continue;
         }
     }
 
     return withdrawFees;
 }
-
 
 
 
